@@ -3,10 +3,11 @@ from flask import Flask
 from threading import Thread
 import requests
 import time
+import os
 
-# --- البيانات التي زودتني بها ---
-BOT_TOKEN = '8602185711:AAE9sktfamGAM8_J8bo548itQKQUMRe2YQk'
-CHAT_ID = '1290512403'
+# استخدام المتغيرات من إعدادات السيرفر
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+CHAT_ID = os.environ.get('CHAT_ID')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # إعداد السيرفر للبقاء نشطاً 24/7
@@ -19,14 +20,19 @@ def keep_alive():
     t.start()
 keep_alive()
 
-# قائمة العملات
-symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'EURUSDT', 'GBPUSDT']
+# قائمة العملات الـ 10 المختارة
+symbols = [
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 
+    'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 
+    'MATICUSDT', 'DOTUSDT'
+]
 prices = {symbol: [] for symbol in symbols}
 
 def send_alert(symbol, side, price):
-    # حساب إيقاف الخسارة (SL) وجني الأرباح (TP)
-    sl = price * 0.98 if side == "BUY" else price * 1.02
-    tp = price * 1.05 if side == "BUY" else price * 0.95
+    # استخدام 0.01 كنسبة للـ SL و TP (أي 1%)
+    sl = price * 0.99 if side == "BUY" else price * 1.01
+    tp = price * 1.01 if side == "BUY" else price * 0.99
+    
     msg = f"🔔 {side} Signal: {symbol}\nPrice: {price:.4f}\nSL: {sl:.4f}\nTP: {tp:.4f}"
     try:
         bot.send_message(CHAT_ID, msg)
@@ -47,10 +53,13 @@ while True:
                 # تحليل البيانات بعد جمع 50 قراءة
                 if len(prices[symbol]) >= 50:
                     avg = sum(prices[symbol]) / 50
-                    side = "BUY" if price > avg else "SELL"
-                    send_alert(symbol, side, price)
-                    print(f"Sent {side} alert for {symbol} at {price:.4f}")
+                    # شرط التحرك بنسبة 0.01 (0.0001)
+                    diff = abs(price - avg) / avg
+                    if diff >= 0.0001: 
+                        side = "BUY" if price > avg else "SELL"
+                        send_alert(symbol, side, price)
+                        print(f"Sent {side} alert for {symbol} at {price:.4f}")
         except Exception as e:
             print(f"Error processing {symbol}: {e}")
 
-    time.sleep(60)
+    time.sleep(60) # فحص السوق كل دقيقة
