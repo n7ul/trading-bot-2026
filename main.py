@@ -5,61 +5,52 @@ import requests
 import time
 import os
 
-# استخدام المتغيرات من إعدادات السيرفر
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# إعداد السيرفر للبقاء نشطاً 24/7
+# سيرفر البقاء نشطاً
 app = Flask('')
 @app.route('/')
 def home(): return "Trading Bot Active!"
 def run(): app.run(host='0.0.0.0', port=8080)
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-keep_alive()
+Thread(target=run).start()
 
-# قائمة العملات الـ 10 المختارة
-symbols = [
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 
-    'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 
-    'MATICUSDT', 'DOTUSDT'
-]
+symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 'MATICUSDT', 'DOTUSDT']
 prices = {symbol: [] for symbol in symbols}
 
-def send_alert(symbol, side, price):
-    # استخدام 0.01 كنسبة للـ SL و TP (أي 1%)
-    sl = price * 0.99 if side == "BUY" else price * 1.01
-    tp = price * 1.01 if side == "BUY" else price * 0.99
-    
-    msg = f"🔔 {side} Signal: {symbol}\nPrice: {price:.4f}\nSL: {sl:.4f}\nTP: {tp:.4f}"
-    try:
-        bot.send_message(CHAT_ID, msg)
-    except Exception as e:
-        print(f"Telegram Error: {e}")
+def get_rsi(prices_list, period=14):
+    if len(prices_list) < period + 1: return 50
+    deltas = [prices_list[i+1] - prices_list[i] for i in range(len(prices_list)-1)]
+    gains = [d for d in deltas if d > 0]
+    losses = [-d for d in deltas if d < 0]
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0: return 100
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
-# حلقة التداول
+def send_alert(symbol, side, price):
+    msg = f"🚀 {side} Signal: {symbol}\nPrice: {price:.4f}\nالهدف: جني أرباح ذكي"
+    try: bot.send_message(CHAT_ID, msg)
+    except Exception as e: print(e)
+
 while True:
     for symbol in symbols:
         try:
             res = requests.get(f'https://api.binance.com/api/v3/ticker/price?symbol={symbol}')
-            data = res.json()
-            if 'price' in data:
-                price = float(data['price'])
-                prices[symbol].append(price)
-                if len(prices[symbol]) > 50: prices[symbol].pop(0)
+            price = float(res.json()['price'])
+            prices[symbol].append(price)
+            if len(prices[symbol]) > 50: prices[symbol].pop(0)
 
-                # تحليل البيانات بعد جمع 50 قراءة
-                if len(prices[symbol]) >= 50:
-                    avg = sum(prices[symbol]) / 50
-                    # شرط التحرك بنسبة 0.01 (0.0001)
-                    diff = abs(price - avg) / avg
-                    if diff >= 0.0001: 
-                        side = "BUY" if price > avg else "SELL"
-                        send_alert(symbol, side, price)
-                        print(f"Sent {side} alert for {symbol} at {price:.4f}")
-        except Exception as e:
-            print(f"Error processing {symbol}: {e}")
-
-    time.sleep(60) # فحص السوق كل دقيقة
+            if len(prices[symbol]) >= 15:
+                rsi = get_rsi(prices[symbol])
+                # الاستراتيجية الذكية:
+                # اشتري فقط إذا كان السوق في منطقة "تشبع بيعي" (RSI < 30)
+                if rsi < 30:
+                    send_alert(symbol, "BUY (فرصة شراء قوية)", price)
+                # بع فقط إذا كان السوق في منطقة "تشبع شرائي" (RSI > 70)
+                elif rsi > 70:
+                    send_alert(symbol, "SELL (فرصة بيع قوية)", price)
+        except: continue
+    time.sleep(60)
